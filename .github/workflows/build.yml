@@ -1,0 +1,469 @@
+name: Build unsigned IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Write project files
+        run: |
+          mkdir -p www
+          cat > package.json <<'END_OF_PKG'
+          {
+            "name": "personal-bank-ios",
+            "version": "1.0.0",
+            "private": true,
+            "description": "بنك المعلومات الشخصية — تطبيق iOS",
+            "dependencies": {
+              "@aparajita/capacitor-biometric-auth": "^9.0.0",
+              "@capacitor/cli": "^8.0.0",
+              "@capacitor/core": "^8.0.0",
+              "@capacitor/filesystem": "^8.0.0",
+              "@capacitor/ios": "^8.0.0",
+              "@capacitor/share": "^8.0.0",
+              "@capacitor/status-bar": "^8.0.0"
+            }
+          }
+          END_OF_PKG
+          cat > capacitor.config.json <<'END_OF_CFG'
+          {
+            "appId": "com.example.personalbank",
+            "appName": "بنك المعلومات",
+            "webDir": "www",
+            "backgroundColor": "#075846",
+            "ios": {
+              "contentInset": "never"
+            },
+            "plugins": {
+              "StatusBar": {
+                "style": "DARK"
+              }
+            }
+          }
+          END_OF_CFG
+          cat > make_icon.py <<'END_OF_ICON'
+          from PIL import Image, ImageDraw
+          S=4; N=1024*S
+          im=Image.new("RGB",(N,N),(7,88,70))
+          d=ImageDraw.Draw(im)
+          k=N/512
+          r=lambda x:x*k
+          d.ellipse([r(62),r(62),r(450),r(450)],outline=(217,170,50),width=int(r(8)))
+          d.rounded_rectangle([r(158),r(142),r(354),r(369)],radius=r(34),fill=(255,255,255))
+          d.ellipse([r(215),r(193),r(297),r(275)],fill=(7,88,70))
+          d.rectangle([r(225),r(262),r(287),r(327)],fill=(7,88,70))
+          im.resize((1024,1024),Image.LANCZOS).save("AppIcon-1024.png")
+          END_OF_ICON
+          cat > patch-ios.sh <<'END_OF_PATCH'
+          set -euo pipefail
+          PLIST="ios/App/App/Info.plist"
+          PB=/usr/libexec/PlistBuddy
+          setstr () { $PB -c "Set :$1 $2" "$PLIST" 2>/dev/null || $PB -c "Add :$1 string $2" "$PLIST"; }
+          setbool () { $PB -c "Set :$1 $2" "$PLIST" 2>/dev/null || $PB -c "Add :$1 bool $2" "$PLIST"; }
+          setstr NSFaceIDUsageDescription "يستخدم التطبيق Face ID لحماية بيانات الموظفين."
+          setstr NSCameraUsageDescription "يستخدم التطبيق الكاميرا لتصوير الكتب الرسمية وإرفاقها."
+          setstr NSPhotoLibraryUsageDescription "يستخدم التطبيق الصور لإرفاق الكتب الرسمية."
+          setbool ITSAppUsesNonExemptEncryption false
+          for f in ios/App/App/Assets.xcassets/AppIcon.appiconset/*.png; do cp AppIcon-1024.png "$f"; done
+          END_OF_PATCH
+          cat > www/index.html <<'END_OF_INDEX_FILE'
+          <!doctype html>
+          <html lang="ar" dir="rtl">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+          <meta name="theme-color" content="#075846">
+          <meta name="apple-mobile-web-app-capable" content="yes">
+          <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+          <meta name="apple-mobile-web-app-title" content="بنك المعلومات">
+          <link rel="manifest" href="manifest.webmanifest">
+          <link rel="apple-touch-icon" href="icons/icon-192.png">
+          <title>بنك المعلومات الشخصية | نظام الإدارة</title>
+          <style>
+          :root{--p:#075846;--p2:#0d755f;--gold:#d9aa32;--bg:#f3f6f5;--card:#fff;--text:#17211f;--muted:#71807c;--line:#e0e7e4;--danger:#b42318;--shadow:0 8px 28px #153b3412}
+          *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,Tahoma,sans-serif}
+          button,input,select,textarea{font:inherit}button{cursor:pointer}
+          header{background:linear-gradient(135deg,#043f35,#0b715d);color:#fff;padding:20px 5%;box-shadow:0 4px 18px #0002}
+          .head{max-width:1180px;margin:auto;display:flex;justify-content:space-between;align-items:center;gap:15px}.brand{display:flex;align-items:center;gap:13px}.logo{width:55px;height:55px;border:2px solid #e9c45a;border-radius:50%;display:grid;place-items:center;font-size:25px;background:#ffffff14}
+          h1{margin:0;font-size:24px}.head p{margin:5px 0 0;color:#d8eeea;font-size:13px}.head button{background:#ffffff18;color:#fff;border:1px solid #ffffff44;border-radius:9px;padding:10px 14px}
+          .wrap{max-width:1180px;margin:20px auto;padding:0 15px}
+          .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}.stat{background:var(--card);border-radius:14px;padding:17px;box-shadow:var(--shadow);border-right:4px solid var(--p)}.stat b{font-size:25px;display:block;color:var(--p)}.stat span{color:var(--muted);font-size:13px}
+          .toolbar,.card{background:var(--card);border-radius:15px;box-shadow:var(--shadow);padding:17px;margin-bottom:15px}.toolbar{display:flex;gap:9px;flex-wrap:wrap}.search{flex:1;min-width:220px}
+          input,select,textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:11px;background:#fff;color:var(--text);outline:none}input:focus,select:focus,textarea:focus{border-color:var(--p);box-shadow:0 0 0 3px #07584612}textarea{min-height:85px;resize:vertical}
+          .btn{border:0;border-radius:9px;padding:11px 15px;font-weight:bold}.primary{background:var(--p);color:#fff}.gold{background:var(--gold);color:#17211f}.soft{background:#edf3f1;color:var(--p)}.danger{background:#fdecea;color:var(--danger)}
+          .profile{display:grid;grid-template-columns:90px 1fr auto;gap:16px;align-items:center}.avatar{width:90px;height:90px;border-radius:50%;background:#e5f0ed;border:3px solid var(--gold);display:grid;place-items:center;font-size:40px}.profile h2{margin:0 0 5px;color:var(--p)}.profile p{margin:0;color:var(--muted)}
+          .tabs{display:flex;gap:7px;overflow:auto;margin-bottom:14px}.tab{white-space:nowrap;background:#eaf0ee;color:var(--p);border:0;padding:10px 14px;border-radius:9px}.tab.active{background:var(--p);color:#fff}
+          .section{display:none}.section.active{display:block}.title{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:15px}.title h2{margin:0;color:var(--p);font-size:19px}
+          .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.field label{display:block;font-size:13px;margin-bottom:5px;color:#4f5d59}.wide{grid-column:1/-1}
+          .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+          .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px}.table{width:100%;border-collapse:collapse;min-width:700px}.table th,.table td{padding:11px;border-bottom:1px solid var(--line);text-align:right;font-size:13px}.table th{background:#f1f5f3;color:var(--p)}.table tr:last-child td{border-bottom:0}
+          .empty{text-align:center;padding:25px;color:var(--muted)}.badge{display:inline-block;padding:5px 8px;border-radius:20px;background:#e8f4ef;color:var(--p);font-size:12px}
+          footer{text-align:center;color:var(--muted);font-size:12px;padding:18px}
+          .toast{position:fixed;bottom:20px;right:20px;background:#173c34;color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 8px 25px #0003;display:none;z-index:10}
+          .modal{position:fixed;inset:0;background:#0007;display:none;align-items:center;justify-content:center;padding:15px;z-index:20}.modal.show{display:flex}.modalbox{background:#fff;border-radius:15px;max-width:600px;width:100%;padding:20px}.modalhead{display:flex;justify-content:space-between;align-items:center}.close{background:#eee;border:0;border-radius:8px;padding:7px 10px}
+          body.dark{--bg:#101816;--card:#17221f;--text:#e8efed;--muted:#a8b5b1;--line:#2d3a36}body.dark input,body.dark select,body.dark textarea{background:#111a18;color:#fff}body.dark .table th{background:#202c29}
+          @media(max-width:700px){.head{align-items:flex-start}.stats{grid-template-columns:1fr 1fr}.profile{grid-template-columns:70px 1fr}.profile .actions{grid-column:1/-1}.avatar{width:70px;height:70px}.grid{grid-template-columns:1fr}.wide{grid-column:auto}.stats .stat:last-child{grid-column:1/-1}}
+          @media print{header,.stats,.toolbar,.tabs,.actions,.no-print,footer{display:none!important}.card{box-shadow:none;border:1px solid #ddd}.section{display:block!important}.profile{border:1px solid #ddd}}
+
+          header{padding-top:calc(20px + env(safe-area-inset-top,0px))}
+          footer{padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+          .toast{bottom:calc(20px + env(safe-area-inset-bottom,0px))}
+          .lock{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:calc(24px + env(safe-area-inset-top,0px)) 24px calc(24px + env(safe-area-inset-bottom,0px));background:linear-gradient(160deg,#043f35,#0b715d);color:#fff;text-align:center}
+          .lock.off{display:none}
+          .lockbox{width:100%;max-width:340px}
+          .lockmark{width:84px;height:84px;margin:0 auto 20px;border:2px solid #e9c45a;border-radius:50%;display:grid;place-items:center;font-size:36px;background:#ffffff14}
+          .lockbox h2{margin:0 0 8px;font-size:22px}
+          .lockbox p{margin:0 0 22px;color:#d8eeea;font-size:14px;line-height:1.7;min-height:24px}
+          .lockbox .btn{width:100%;padding:14px;font-size:16px}
+          .lockbox input{margin-bottom:10px;text-align:center;letter-spacing:.45em;font-size:20px;background:#ffffff14;border:1px solid #ffffff55;color:#fff}
+          .lockbox input::placeholder{letter-spacing:0;font-size:14px;color:#d8eeea99}
+          .lockbox [hidden]{display:none}
+          #lockErr{color:#ffd9d4;min-height:22px;margin:14px 0 0;font-size:13px}
+          </style>
+          </head>
+          <body>
+          <div id="lock" class="lock" role="dialog" aria-modal="true" aria-label="شاشة القفل">
+          <div class="lockbox">
+          <div class="lockmark" aria-hidden="true">🔒</div>
+          <h2>بنك المعلومات الشخصية</h2>
+          <p id="lockMsg">جارٍ التحقق…</p>
+          <div id="lockBio" hidden><button class="btn gold" onclick="unlockNative()">فتح بـ Face ID</button></div>
+          <div id="lockPin" hidden>
+          <input id="pin1" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="الرمز" onkeydown="if(event.key==='Enter')submitPin()">
+          <input id="pin2" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="أعد كتابة الرمز" hidden onkeydown="if(event.key==='Enter')submitPin()">
+          <button id="pinBtn" class="btn gold" onclick="submitPin()">فتح</button>
+          </div>
+          <p id="lockErr" role="alert"></p>
+          </div>
+          </div>
+
+          <header>
+          <div class="head">
+          <div class="brand"><div class="logo">م</div><div><h1>بنك المعلومات الشخصية</h1><p>نظام إدارة البيانات الشخصية والوظيفية</p></div></div>
+          <button onclick="toggleDark()">☾ الوضع الليلي</button>
+          </div>
+          </header>
+
+          <main class="wrap">
+          <div class="stats">
+          <div class="stat"><b id="statPeople">0</b><span>عدد الموظفين</span></div>
+          <div class="stat"><b id="statBooks">0</b><span>الكتب الرسمية</span></div>
+          <div class="stat"><b id="statDocs">0</b><span>الأوراق الثبوتية</span></div>
+          </div>
+
+          <div class="toolbar no-print">
+          <input class="search" id="search" placeholder="🔎 ابحث بالاسم أو الرقم الوظيفي..." oninput="renderPeople()">
+          <button class="btn primary" onclick="newPerson()">＋ موظف جديد</button>
+          <button class="btn soft" onclick="backup()">نسخة احتياطية</button>
+          <button class="btn soft" onclick="restoreInput.click()">استرجاع</button>
+          <input id="restoreInput" type="file" accept=".json" style="display:none" onchange="restore(event)">
+          </div>
+
+          <div class="card profile">
+          <div class="avatar">👤</div>
+          <div><h2 id="pName">اسم الموظف</h2><p id="pInfo">العنوان الوظيفي — المدرسة / المديرية</p></div>
+          <div class="actions no-print"><button class="btn gold" onclick="window.print()">🖨️ طباعة الملف</button></div>
+          </div>
+
+          <div class="card">
+          <div class="tabs no-print">
+          <button class="tab active" onclick="tab(this,'personal')">👤 الشخصية</button>
+          <button class="tab" onclick="tab(this,'job')">💼 الوظيفة</button>
+          <button class="tab" onclick="tab(this,'education')">🎓 التعليم</button>
+          <button class="tab" onclick="tab(this,'docs')">📎 الثبوتيات</button>
+          <button class="tab" onclick="tab(this,'books')">📚 الكتب الرسمية</button>
+          <button class="tab" onclick="tab(this,'notes')">📝 الملاحظات</button>
+          </div>
+
+          <section id="personal" class="section active">
+          <div class="title"><h2>المعلومات الشخصية</h2></div>
+          <div class="grid">
+          <div class="field"><label>الاسم الكامل</label><input id="name"></div><div class="field"><label>اسم الأم</label><input id="mother"></div>
+          <div class="field"><label>تاريخ الميلاد</label><input id="birth" type="date"></div><div class="field"><label>مكان الولادة</label><input id="birthPlace"></div>
+          <div class="field"><label>الجنس</label><select id="gender"><option>ذكر</option><option>أنثى</option></select></div><div class="field"><label>الحالة الاجتماعية</label><select id="marital"><option>أعزب</option><option>متزوج</option><option>مطلق</option><option>أرمل</option></select></div>
+          <div class="field"><label>عدد الأطفال</label><input id="children" type="number" min="0"></div><div class="field"><label>رقم الهاتف</label><input id="phone" type="tel"></div>
+          <div class="field"><label>البريد الإلكتروني</label><input id="email" type="email"></div>
+          </div></section>
+
+          <section id="job" class="section">
+          <div class="title"><h2>المعلومات الوظيفية</h2></div>
+          <div class="grid">
+          <div class="field"><label>الرقم الوظيفي</label><input id="employee"></div><div class="field"><label>العنوان الوظيفي</label><input id="job"></div>
+          <div class="field"><label>الدرجة</label><input id="grade"></div><div class="field"><label>المرحلة</label><input id="step"></div>
+          <div class="field"><label>تاريخ التعيين</label><input id="appointment" type="date"></div><div class="field"><label>تاريخ المباشرة</label><input id="start" type="date"></div>
+          <div class="field"><label>سنوات الخدمة</label><input id="service" type="number" min="0"></div><div class="field"><label>جهة الانتساب</label><input id="affiliation"></div>
+          <div class="field"><label>المدرسة / الدائرة</label><input id="school"></div><div class="field"><label>المديرية</label><input id="directorate"></div>
+          <div class="field"><label>القسم</label><input id="department"></div><div class="field"><label>الشعبة</label><input id="section"></div>
+          <div class="field"><label>المحافظة</label><input id="province"></div><div class="field"><label>القضاء / الناحية</label><input id="district"></div>
+          <div class="field"><label>آخر علاوة</label><input id="lastRaise"></div><div class="field"><label>تاريخ آخر علاوة</label><input id="raiseDate" type="date"></div>
+          <div class="field"><label>آخر ترفيع</label><input id="promotion"></div><div class="field"><label>تاريخ الاستحقاق القادم</label><input id="nextDate" type="date"></div>
+          </div></section>
+
+          <section id="education" class="section">
+          <div class="title"><h2>المؤهلات والدورات</h2></div>
+          <div class="grid">
+          <div class="field"><label>الشهادة</label><select id="educationLevel"><option>دبلوم</option><option>بكالوريوس</option><option>دبلوم عالي</option><option>ماجستير</option><option>دكتوراه</option></select></div>
+          <div class="field"><label>الاختصاص</label><input id="specialty"></div><div class="field"><label>الجامعة / المعهد</label><input id="university"></div><div class="field"><label>سنة التخرج</label><input id="graduation" type="number"></div>
+          <div class="field"><label>اسم آخر دورة</label><input id="course"></div><div class="field"><label>جهة الدورة</label><input id="courseOrg"></div><div class="field"><label>تاريخ الدورة</label><input id="courseDate" type="date"></div><div class="field"><label>مدة الدورة</label><input id="courseDuration"></div>
+          </div></section>
+
+          <section id="docs" class="section">
+          <div class="title"><h2>الأوراق الثبوتية</h2><button class="btn primary no-print" onclick="openModal('docModal')">＋ إضافة وثيقة</button></div>
+          <div class="table-wrap"><table class="table"><thead><tr><th>النوع</th><th>الرقم</th><th>الإصدار</th><th>الانتهاء</th><th>جهة الإصدار</th><th></th></tr></thead><tbody id="docsTable"></tbody></table></div>
+          </section>
+
+          <section id="books" class="section">
+          <div class="title"><h2>الكتب الرسمية</h2><button class="btn primary no-print" onclick="openModal('bookModal')">＋ إضافة كتاب رسمي</button></div>
+          <div class="table-wrap"><table class="table"><thead><tr><th>النوع</th><th>الرقم</th><th>التاريخ</th><th>الموضوع</th><th>من</th><th>إلى</th><th>مرفق</th><th></th></tr></thead><tbody id="booksTable"></tbody></table></div>
+          </section>
+
+          <section id="notes" class="section">
+          <div class="title"><h2>العنوان والملاحظات</h2></div>
+          <div class="grid">
+          <div class="field wide"><label>العنوان الكامل</label><textarea id="address"></textarea></div>
+          <div class="field wide"><label>ملاحظات إدارية</label><textarea id="notes"></textarea></div>
+          </div>
+          </section>
+
+          <div class="actions no-print">
+          <button class="btn primary" onclick="save()">💾 حفظ البيانات</button><button class="btn soft" onclick="newPerson()">موظف جديد</button><button class="btn gold" onclick="window.print()">🖨️ طباعة</button><button class="btn danger" onclick="deletePerson()">حذف الموظف</button>
+          </div>
+          </div>
+
+          <div class="card no-print"><div class="title"><h2>قائمة الموظفين</h2></div><div id="peopleList"></div></div>
+          </main>
+
+          <footer>بنك المعلومات الشخصية © 2026 — يعمل محليًا على جهازك</footer>
+          <div id="toast" class="toast"></div>
+
+          <div id="docModal" class="modal"><div class="modalbox">
+          <div class="modalhead"><h2>إضافة ورقة ثبوتية</h2><button class="close" onclick="closeModal('docModal')">✕</button></div>
+          <div class="grid">
+          <div class="field"><label>نوع الوثيقة</label><select id="docType"><option>البطاقة الوطنية</option><option>بطاقة السكن</option><option>هوية الأحوال المدنية</option><option>شهادة الجنسية</option><option>جواز السفر</option><option>هوية الموظف</option><option>أخرى</option></select></div>
+          <div class="field"><label>رقم الوثيقة</label><input id="docNo"></div><div class="field"><label>تاريخ الإصدار</label><input id="docDate" type="date"></div><div class="field"><label>تاريخ الانتهاء</label><input id="docExpiry" type="date"></div><div class="field"><label>جهة الإصدار</label><input id="docFrom"></div>
+          </div><div class="actions"><button class="btn primary" onclick="addDoc()">إضافة</button><button class="btn soft" onclick="closeModal('docModal')">إلغاء</button></div>
+          </div></div>
+
+          <div id="bookModal" class="modal"><div class="modalbox">
+          <div class="modalhead"><h2>إضافة كتاب رسمي</h2><button class="close" onclick="closeModal('bookModal')">✕</button></div>
+          <div class="grid">
+          <div class="field"><label>نوع الكتاب</label><select id="bookType"><option>كتاب رسمي</option><option>أمر إداري</option><option>أمر وزاري</option><option>تأييد</option><option>تنسيب</option><option>نقل</option><option>ترفيع</option><option>علاوة</option><option>أخرى</option></select></div>
+          <div class="field"><label>رقم الكتاب</label><input id="bookNo"></div><div class="field"><label>تاريخ الكتاب</label><input id="bookDate" type="date"></div><div class="field"><label>جهة الإصدار</label><input id="bookFrom"></div><div class="field"><label>موجه إلى</label><input id="bookTo"></div><div class="field"><label>الموضوع</label><input id="bookSubject"></div><div class="field wide"><label>إرفاق صورة / PDF</label><input id="bookFile" type="file" accept="image/*,.pdf"></div>
+          </div><div class="actions"><button class="btn primary" onclick="addBook()">إضافة</button><button class="btn soft" onclick="closeModal('bookModal')">إلغاء</button></div>
+          </div></div>
+
+          <script>
+          const F=["name","mother","birth","birthPlace","gender","marital","children","phone","email","employee","job","grade","step","appointment","start","service","affiliation","school","directorate","department","section","province","district","lastRaise","raiseDate","promotion","nextDate","educationLevel","specialty","university","graduation","course","courseOrg","courseDate","courseDuration","address","notes"];
+          let people=[],current=-1,docs=[],books=[];
+          const $=id=>document.getElementById(id);
+          const DB_NAME="personal-bank-db", DB_VERSION=1, STORE="employees";
+          let dbReady;
+
+          function openDB(){
+            if(!dbReady) dbReady=new Promise((resolve,reject)=>{
+              const req=indexedDB.open(DB_NAME,DB_VERSION);
+              req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:"_id",autoIncrement:true});};
+              req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+            });
+            return dbReady;
+          }
+          async function dbAll(){const db=await openDB();return new Promise((resolve,reject)=>{const r=db.transaction(STORE).objectStore(STORE).getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);});}
+          async function dbPut(item){const db=await openDB();return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,"readwrite");const r=tx.objectStore(STORE).put(item);r.onsuccess=()=>resolve(r.result);tx.onerror=()=>reject(tx.error);});}
+          async function dbDelete(id){const db=await openDB();return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,"readwrite");tx.objectStore(STORE).delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}
+          async function dbReplaceAll(items){const db=await openDB();return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,"readwrite"),s=tx.objectStore(STORE);s.clear();items.forEach(p=>{const x={...p};delete x._id;s.add(x);});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});}
+          async function load(){try{people=await dbAll();}catch(e){people=[];toast("تعذر فتح قاعدة البيانات المحلية");}renderPeople();updateStats();if(people.length)openPerson(0);}
+          async function save(){
+            let p=read();if(!p.name.trim()){toast("اكتب اسم الموظف أولاً");return;}
+            p.docs=docs;p.books=books;
+            try{
+              if(current<0){const id=await dbPut(p);p._id=id;people.push(p);current=people.length-1;}
+              else{p._id=people[current]._id;await dbPut(p);people[current]=p;}
+              renderPeople();updateStats();preview();toast("تم حفظ الملف على الجهاز");
+            }catch(e){toast("فشل الحفظ، تحقق من مساحة الجهاز");}
+          }
+          function read(){let o={};F.forEach(x=>o[x]=$(x).value);return o;}
+          function fill(p){F.forEach(x=>$(x).value=p?.[x]||"");docs=p?.docs||[];books=p?.books||[];preview();renderDocs();renderBooks();}
+          function newPerson(){current=-1;fill({});toast("تم فتح ملف جديد");window.scrollTo(0,0);}
+          function openPerson(i){current=i;fill(people[i]);toast("تم فتح ملف الموظف");window.scrollTo(0,0);}
+          async function deletePerson(){if(current<0){toast("حدد موظفاً أولاً");return;}if(!confirm("حذف ملف الموظف؟"))return;try{await dbDelete(people[current]._id);people.splice(current,1);newPerson();renderPeople();updateStats();toast("تم الحذف");}catch(e){toast("تعذر حذف الملف");}}
+          function preview(){$("pName").textContent=$("name").value||"اسم الموظف";$("pInfo").textContent=($("job").value||"العنوان الوظيفي")+" — "+($("school").value||"المدرسة / المديرية");}
+          function renderPeople(){let q=($("search").value||"").toLowerCase(),a=people.map((p,i)=>({p,i})).filter(x=>((x.p.name||"")+" "+(x.p.employee||"")).toLowerCase().includes(q)),b=$("peopleList");if(!a.length){b.innerHTML='<div class="empty">لا توجد ملفات موظفين</div>';return;}b.innerHTML='<div class="table-wrap"><table class="table"><thead><tr><th>الاسم</th><th>الرقم الوظيفي</th><th>الوظيفة</th><th>المدرسة</th><th></th></tr></thead><tbody>'+a.map(x=>'<tr><td>'+esc(x.p.name)+'</td><td>'+esc(x.p.employee)+'</td><td>'+esc(x.p.job)+'</td><td>'+esc(x.p.school)+'</td><td><button class="btn soft" onclick="openPerson('+x.i+')">فتح</button></td></tr>').join("")+'</tbody></table></div>';}
+          function addDoc(){if(!$("docNo").value){toast("أدخل رقم الوثيقة");return;}docs.push({type:$("docType").value,no:$("docNo").value,date:$("docDate").value,expiry:$("docExpiry").value,from:$("docFrom").value});renderDocs();closeModal("docModal");clearIds(["docNo","docDate","docExpiry","docFrom"]);toast("تمت إضافة الوثيقة");}
+          function renderDocs(){let t=$("docsTable");if(!docs.length){t.innerHTML='<tr><td colspan="6" class="empty">لا توجد أوراق ثبوتية</td></tr>';return;}t.innerHTML=docs.map((d,i)=>'<tr><td><span class="badge">'+esc(d.type)+'</span></td><td>'+esc(d.no)+'</td><td>'+esc(d.date)+'</td><td>'+esc(d.expiry)+'</td><td>'+esc(d.from)+'</td><td><button class="btn danger" onclick="removeDoc('+i+')">حذف</button></td></tr>').join("");}
+          function removeDoc(i){docs.splice(i,1);renderDocs();toast("تم حذف الوثيقة");}
+          function fileAsDataURL(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});}
+          async function addBook(){
+            let f=$("bookFile").files[0];if(!$("bookNo").value&&!$("bookSubject").value){toast("أدخل رقم الكتاب أو موضوعه");return;}
+            if(f && f.size>8*1024*1024){toast("حجم المرفق أكبر من 8 ميغابايت");return;}
+            try{books.push({type:$("bookType").value,no:$("bookNo").value,date:$("bookDate").value,from:$("bookFrom").value,to:$("bookTo").value,subject:$("bookSubject").value,file:f?f.name:"",fileData:f?await fileAsDataURL(f):null});renderBooks();closeModal("bookModal");clearIds(["bookNo","bookDate","bookFrom","bookTo","bookSubject"]);$("bookFile").value="";toast("تم إرفاق الكتاب داخل قاعدة البيانات المحلية");}
+            catch(e){toast("تعذر قراءة المرفق");}
+          }
+          function renderBooks(){let t=$("booksTable");if(!books.length){t.innerHTML='<tr><td colspan="8" class="empty">لا توجد كتب رسمية</td></tr>';return;}t.innerHTML=books.map((b,i)=>'<tr><td><span class="badge">'+esc(b.type)+'</span></td><td>'+esc(b.no)+'</td><td>'+esc(b.date)+'</td><td>'+esc(b.subject)+'</td><td>'+esc(b.from)+'</td><td>'+esc(b.to)+'</td><td>'+(b.fileData?'<button class="btn soft" onclick="openAttachment('+i+')">'+esc(b.file||"فتح المرفق")+'</button>':esc(b.file||"—"))+'</td><td><button class="btn danger" onclick="removeBook('+i+')">حذف</button></td></tr>').join("");}
+          function removeBook(i){books.splice(i,1);renderBooks();toast("تم حذف الكتاب");}
+          function clearIds(a){a.forEach(x=>$(x).value="");}
+          function tab(btn,id){document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));document.querySelectorAll(".section").forEach(x=>x.classList.remove("active"));btn.classList.add("active");$(id).classList.add("active");}
+          function openModal(id){$(id).classList.add("show");}function closeModal(id){$(id).classList.remove("show");}
+          function updateStats(){$("statPeople").textContent=people.length;$("statBooks").textContent=people.reduce((n,p)=>n+(p.books||[]).length,0);$("statDocs").textContent=people.reduce((n,p)=>n+(p.docs||[]).length,0);}
+          async function backup(){
+            const clean=people.map(p=>{const x={...p};delete x._id;return x;});
+            try{
+              await deliverFile("personal-bank-backup-"+new Date().toISOString().slice(0,10)+".json",{text:JSON.stringify(clean,null,2),mime:"application/json"});
+              toast("تم إنشاء النسخة الاحتياطية");
+            }catch(e){if(!/cancel/i.test(String(e&&e.message)))toast("تعذر إنشاء النسخة الاحتياطية");}
+          }
+          async function restore(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=async()=>{try{let data=JSON.parse(r.result);if(!Array.isArray(data))throw Error("invalid");await dbReplaceAll(data);people=await dbAll();renderPeople();updateStats();newPerson();toast("تم استرجاع البيانات");}catch(x){toast("ملف النسخة الاحتياطية غير صالح");}};r.readAsText(f);e.target.value="";}
+          function toggleDark(){document.body.classList.toggle("dark");localStorage.setItem("pro_dark",document.body.classList.contains("dark"));}
+          function toast(t){let x=$("toast");x.textContent=t;x.style.display="block";setTimeout(()=>x.style.display="none",2600);}
+          function esc(s){return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));}
+          F.forEach(x=>$(x).addEventListener("input",preview));
+          if(localStorage.getItem("pro_dark")==="true")document.body.classList.add("dark");
+          if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol))window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+          /* ===== iOS native bridge (Capacitor) ===== */
+          const Cap=window.Capacitor;
+          const isNative=!!(Cap&&Cap.isNativePlatform&&Cap.isNativePlatform());
+          let Bio=null,FS=null,Share=null;
+          if(isNative){try{Bio=Cap.registerPlugin("BiometricAuthNative");FS=Cap.registerPlugin("Filesystem");Share=Cap.registerPlugin("Share");}catch(e){}}
+          function safeName(s){return String(s||"file").replace(/[\\\/:*?"<>|\r\n]+/g,"_").slice(0,80);}
+          async function deliverFile(name,o){
+            if(isNative&&FS&&Share){
+              const enc=o.dataUrl?{}:{encoding:"utf8"};
+              const data=o.dataUrl?(o.dataUrl.split(",")[1]||""):o.text;
+              const r=await FS.writeFile({path:safeName(name),data,directory:"CACHE",...enc});
+              await Share.share({title:name,url:r.uri,dialogTitle:name});
+              return;
+            }
+            const href=o.dataUrl||URL.createObjectURL(new Blob([o.text],{type:o.mime||"application/octet-stream"}));
+            const a=document.createElement("a");a.href=href;a.download=name;document.body.appendChild(a);a.click();a.remove();
+            if(!o.dataUrl)setTimeout(()=>URL.revokeObjectURL(href),1000);
+          }
+          async function openAttachment(i){
+            const b=books[i];if(!b||!b.fileData)return;
+            try{await deliverFile(b.file||"attachment",{dataUrl:b.fileData});}
+            catch(e){if(!/cancel/i.test(String(e&&e.message)))toast("تعذر فتح المرفق");}
+          }
+
+          /* ===== App lock: Face ID (native) or PIN (browser) ===== */
+          const AUTO_LOCK_MS=30000;
+          let lockMode=null,authBusy=false,hiddenAt=0,pinFails=0,pinBlockedUntil=0;
+          const lockEl=$("lock");
+          function showLock(){lockEl.classList.remove("off");}
+          function hideLock(){lockEl.classList.add("off");hiddenAt=0;$("lockErr").textContent="";}
+          function lockErr(t){$("lockErr").textContent=t||"";}
+          function pinSetupPending(){return lockMode==="pin"&&!localStorage.getItem("pro_pin");}
+          async function initLock(){
+            if(isNative&&Bio){
+              try{const i=await Bio.checkBiometry();if(i.isAvailable||i.deviceIsSecure)lockMode="bio";}catch(e){}
+            }
+            if(!lockMode)lockMode="pin";
+            if(lockMode==="bio"){
+              $("lockMsg").textContent="افتح التطبيق بـ Face ID أو برمز الجهاز";
+              $("lockBio").hidden=false;
+              unlockNative();
+            }else{
+              const first=pinSetupPending();
+              $("lockMsg").textContent=first?"أنشئ رمزاً من 4 إلى 6 أرقام لحماية البيانات":"أدخل الرمز لفتح التطبيق";
+              $("pin2").hidden=!first;$("pinBtn").textContent=first?"حفظ الرمز":"فتح";
+              $("lockPin").hidden=false;
+            }
+          }
+          async function unlockNative(){
+            if(authBusy)return;authBusy=true;lockErr("");
+            try{
+              await Bio.authenticate({reason:"فتح بنك المعلومات الشخصية",cancelTitle:"إلغاء",allowDeviceCredential:true,iosFallbackTitle:"استخدام رمز الجهاز"});
+              hideLock();
+            }catch(e){lockErr("لم يتم التحقق. اضغط الزر للمحاولة مرة أخرى.");}
+            finally{authBusy=false;}
+          }
+          async function hashPin(pin,salt){
+            const d=new TextEncoder().encode(salt+":"+pin);
+            const h=await crypto.subtle.digest("SHA-256",d);
+            return Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,"0")).join("");
+          }
+          async function submitPin(){
+            const p1=$("pin1").value.trim(),saved=localStorage.getItem("pro_pin");
+            try{
+              if(!saved){
+                if(!/^\d{4,6}$/.test(p1)){lockErr("الرمز يجب أن يكون من 4 إلى 6 أرقام");return;}
+                if(p1!==$("pin2").value.trim()){lockErr("الرمزان غير متطابقين");return;}
+                const salt=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,"0")).join("");
+                localStorage.setItem("pro_pin",JSON.stringify({salt,hash:await hashPin(p1,salt)}));
+                $("pin1").value=$("pin2").value="";$("pin2").hidden=true;$("pinBtn").textContent="فتح";
+                hideLock();toast("تم حفظ الرمز");return;
+              }
+              if(Date.now()<pinBlockedUntil){lockErr("محاولات كثيرة. انتظر قليلاً ثم حاول مرة أخرى.");return;}
+              const o=JSON.parse(saved);
+              if(await hashPin(p1,o.salt)===o.hash){pinFails=0;$("pin1").value="";hideLock();}
+              else{
+                pinFails++;$("pin1").value="";
+                if(pinFails>=5){pinFails=0;pinBlockedUntil=Date.now()+30000;lockErr("محاولات كثيرة. انتظر 30 ثانية.");}
+                else lockErr("الرمز غير صحيح");
+              }
+            }catch(e){lockErr("تعذر التحقق من الرمز على هذا المتصفح.");}
+          }
+          document.addEventListener("visibilitychange",()=>{
+            if(authBusy||!lockMode)return;
+            if(document.hidden){hiddenAt=Date.now();showLock();}
+            else if(pinSetupPending())return;
+            else if(Date.now()-hiddenAt>AUTO_LOCK_MS){$("pin1").value="";if(lockMode==="bio")unlockNative();}
+            else hideLock();
+          });
+          initLock();
+
+          load();
+          </script>
+          </body>
+          </html>
+          END_OF_INDEX_FILE
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate app icon
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet pillow
+          .venv/bin/python make_icon.py
+
+      - name: Create iOS project
+        run: |
+          npx cap add ios --packagemanager CocoaPods
+          npx cap sync ios
+
+      - name: Patch Info.plist and icon
+        run: bash patch-ios.sh
+
+      - name: Archive (no signing)
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION=1.0 \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}"
+
+      - name: Package IPA
+        run: |
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qry "$GITHUB_WORKSPACE/PersonalBank.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/PersonalBank.ipa"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PersonalBank-ipa
+          path: PersonalBank.ipa
+          retention-days: 30
